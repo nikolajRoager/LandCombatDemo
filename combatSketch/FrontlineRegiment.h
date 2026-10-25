@@ -39,7 +39,7 @@ struct FrontlineRegiment {
     ///Tank general purpose
     int tankShells_;
 
-    explicit FrontlineRegiment(uint tileId, uint ownerId,BattleStats stats) {
+    explicit FrontlineRegiment(uint32_t tileId, uint32_t ownerId,BattleStats stats) {
         tileId_ = tileId;
         ownerId_ = ownerId;
         soldiers_=stats.std_soldiers_;

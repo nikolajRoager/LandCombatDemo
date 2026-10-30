@@ -22,12 +22,13 @@ struct FrontlineRegiment {
     int soldiers_;
     int tanks_;
     int IFVs_;
+    int EWUnits_;
 
     //---Ammunition----
     ///An IFV uses 1 unit of fuel per action, a tank uses 3
     int fuel_;
     ///Standard infantry bullets
-    int bullets_;
+    int64_t bullets_;
     ///Infantry anti-tank
     int infantryAntiTank_;
     ///Infantry anti-air or anti-drone (man-pads or interceptor drones)
@@ -39,12 +40,16 @@ struct FrontlineRegiment {
     ///Tank general purpose
     int tankShells_;
 
-    explicit FrontlineRegiment(uint32_t tileId, uint32_t ownerId,BattleStats stats) {
+    //Which nation has what recon on this regiment
+    std::map<uint32_t,float> nationRecon_;
+
+    FrontlineRegiment(uint32_t tileId, uint32_t ownerId,BattleStats stats) {
         tileId_ = tileId;
         ownerId_ = ownerId;
         soldiers_=stats.std_soldiers_;
         tanks_=stats.std_tanks_;
         IFVs_=stats.std_IFVs_;
+        EWUnits_=stats.std_EWUnits_;
         fuel_=stats.std_fuel_;
         bullets_=stats.std_bullets_;
         infantryAntiTank_=stats.std_infantryAntiTank_;
@@ -52,8 +57,27 @@ struct FrontlineRegiment {
         reconDrones_=stats.std_reconDrones_;
         attackDrones_=stats.std_attackDrones_;
         tankShells_=stats.std_tankShells_;
+        entrenchment_=0.f;
+        morale_=1.f;
+    }
 
+    float getRecon(uint32_t nation)
+    {
+        return (nationRecon_.contains(nation) ? nationRecon_[nation] : 0.f);
+    }
+
+    void reconDecay(BattleStats battleStats) {
+        for (auto it = nationRecon_.begin(); it != nationRecon_.end();) {
+            it->second = it->second*(1.f-battleStats.reconDecay);
+            if (it->second<battleStats.reconRemoval) {
+                it = nationRecon_.erase(it);
+            }
+            else {
+                ++it;
+            }
+        }
     }
 };
+
 
 #endif //LANDCOMBATSKETCH_REGIMENT_H

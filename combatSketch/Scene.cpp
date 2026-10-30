@@ -55,7 +55,7 @@ smallNumberRenderer_(0,smallFont,renderer)
 
     double radius = 64;
     int hexesX = 16;
-    int hexesY = 10;
+    int hexesY = 1;
 
     for (int yi = 0; yi < hexesY; yi++) {
         for (int xi = 0; xi < hexesX; xi++) {
@@ -172,40 +172,63 @@ void Scene::updateCombat() {
     std::cout<<"Update combat"<<std::endl;
 
     std::cout<<"Status update"<<std::endl;
-    for (auto& nation : nations_) {
-        nation.reconDecay();
+    for (auto& regiment : frontlineRegiments_) {
+        regiment->reconDecay(nations_[regiment->ownerId_].getBattleStats());
     }
 
     std::cout<<"Recon phase"<<std::endl;
+    //TODO Make initiative roll
     for (auto& regiment : frontlineRegiments_) {
         Nation& nation = nations_[regiment->ownerId_];
-        //Check if the regiment is actually on the front-line
-        std::vector<uint32_t> frontNeighbours;
+        //Check if the regiment has anybody to do recon against
+        std::vector<std::shared_ptr<FrontlineRegiment>> hostileNeighbours;
         for (uint32_t tileId : tiles_[regiment->tileId_].neighbourIds_) {
-            if (tiles_[tileId].ownerId_!=regiment->ownerId_) {
-                frontNeighbours.emplace_back(tileId);
+            //TODO check if we are at war with them
+            for (auto& neighbourRegiment : tiles_[tileId].frontlineRegiments_)
+            {
+                if (neighbourRegiment->ownerId_!=regiment->ownerId_)
+                {
+                    hostileNeighbours.push_back(neighbourRegiment);
+                }
             }
         }
-        if (!frontNeighbours.empty()) {
-            std::cout<<"Regiment at "<<regiment->tileId_<<std::endl;
+        if (!hostileNeighbours.empty()) {
+
+            const auto& ownBattleStats = nation.getBattleStats();
+            std::cout<<"Regiment at "<<regiment->tileId_<<" does recon"<<std::endl;
             //Randomly distribute the recon budget among our neighbours, weighted by 1 minus their recon
-            int32_t budget = nation.getBattleStats().dailyReconPoints_;
-            std::vector<float> weights(frontNeighbours.size());
-            std::vector<uint32_t> points;
-            for (uint32_t i = 0; i < frontNeighbours.size(); i++) {
-                weights[i]=1.f-nation.getRecon(frontNeighbours[i]);
+            int32_t budget = ownBattleStats.dailyReconPoints_;
+            std::vector<float> weights(hostileNeighbours.size());
+            for (uint32_t i = 0; i < hostileNeighbours.size(); i++) {
+                weights[i]=1.f-hostileNeighbours[i]->getRecon(regiment->ownerId_);
             }
             //This is the multinomial distribution
-            for (uint32_t i = 0; i < frontNeighbours.size(); i++) {
+            for (uint32_t i = 0; i < hostileNeighbours.size(); i++) {
+                Nation& theirNation = nations_[hostileNeighbours[i]->ownerId_];
+                const auto& theirBattleStats = theirNation.getBattleStats();
                 float totalWeight = 0.0f;
-                for (uint32_t j = i; j < frontNeighbours.size(); j++) {
+                for (uint32_t j = i; j < hostileNeighbours.size(); j++) {
                     totalWeight += weights[j];
                 }
                 float w = safeDiv(weights[i],totalWeight);
-                int32_t p = safeBinomial(budget,w,rng_);
-                std::cout<<'\t'<<frontNeighbours[i]<<':'<<p<<std::endl;
-                points.push_back(p);
-                budget -= p;
+                int32_t reconPoints = safeBinomial(budget,w,rng_);
+                auto& them = hostileNeighbours[i];
+                std::cout<<"\tRecon budget for neighbour at "<<them->tileId_<<':'<<reconPoints<<std::endl;
+                budget -= reconPoints;
+                //TODO split the budget into drone, infantry, ifv, and tank recon, for now we only use drones for recon
+
+                {
+                    int32_t drones = reconPoints/ownBattleStats.droneReconCost_;
+                    int32_t respondingInfantry=them->soldiers_*theirBattleStats.counterReconFraction_;
+
+                    //How much munition does this translate to against all the recon drones
+                    //I could use rng to determine how many bullets get fired, but since responding infantry is likely a large number, the number of fired bullets will come close to the average
+                    int64_t maxRespondingBullets=std::min(them->bullets_,(respondingInfantry*theirBattleStats.averageInfantryBulletsPerReconDroneNominator_*drones)/theirBattleStats.averageInfantryBulletsPerReconDroneDenominator_);
+                    int32_t maxRespondingInfAA = std::min(them->infantryAntiAir_,(respondingInfantry*theirBattleStats.averageInfantryAntiAirPerReconDroneNominator_*drones)/theirBattleStats.averageInfantryAntiAirPerReconDroneDenominator_);
+
+                    std::cout<<"\t\t"<<drones<<" drone fly against "<<maxRespondingBullets<<" bullets and "<<maxRespondingInfAA<<" infantry anti-air"<<std::endl;
+
+                }
             }
         }
     }
